@@ -203,7 +203,7 @@ VALUE xxtea_decrypt(VALUE mod, VALUE data, VALUE key)
 
     if (!retval) {
         free(d);
-        return NULL;
+        return Qnil;
     }
 
     retbuf = RSTRING_PTR(retval);
