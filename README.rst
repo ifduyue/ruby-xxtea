@@ -1,8 +1,11 @@
-xxtea |rubygems-badge| 
-==================================
+xxtea |rubygems-badge| |travisci-badge|
+===========================================
 
 .. |rubygems-badge| image:: https://badge.fury.io/rb/xxtea.svg
     :target: http://badge.fury.io/rb/xxtea
+
+.. |travisci-badge| image:: https://travis-ci.org/ifduyue/ruby-xxtea.svg?branch=master
+    :target: https://travis-ci.org/ifduyue/ruby-xxtea
 
 Ruby xxtea module, licensed under 2-clause BSD.
 
