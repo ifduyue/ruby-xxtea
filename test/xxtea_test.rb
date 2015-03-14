@@ -1,5 +1,6 @@
 require 'minitest/autorun'
 require 'minitest/spec'
+require 'securerandom'
 
 require 'xxtea'
 
@@ -23,5 +24,18 @@ describe XXTEA do
 
   it 'decrypt_hex' do
     assert_equal XXTEA.decrypt_hex(hexenc, key), data
+  end
+
+  it 'encrypt and decrypt' do
+    2048.times do |i|
+      key = SecureRandom.random_bytes 16
+      data = SecureRandom.random_bytes i
+
+      enc = XXTEA.encrypt data, key
+      hexenc = XXTEA.encrypt_hex data, key
+
+      assert_equal data, XXTEA.decrypt(enc, key)
+      assert_equal data, XXTEA.decrypt_hex(hexenc, key)
+    end
   end
 end
