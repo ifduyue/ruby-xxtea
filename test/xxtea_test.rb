@@ -34,6 +34,7 @@ describe XXTEA do
       enc = XXTEA.encrypt data, key
       hexenc = XXTEA.encrypt_hex data, key
 
+      assert_equal hexenc, enc.unpack('H*').first
       assert_equal data, XXTEA.decrypt(enc, key)
       assert_equal data, XXTEA.decrypt_hex(hexenc, key)
     end
