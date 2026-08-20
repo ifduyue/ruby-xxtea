@@ -199,6 +199,18 @@ XXTEA.new("k" * 16, rounds: 2**32)
 - Compatible with [Python xxtea](https://github.com/ifduyue/xxtea) (same padding, endianness, and rounds).
 - The `XXTEA.encrypt(data, key)` / `XXTEA.decrypt(data, key)` class methods remain compatible with gem 0.0.1 for valid ciphertext. `XXTEA` is now a class rather than a module, and invalid padding raises `ArgumentError` instead of returning stripped bytes.
 
+## Releasing
+
+Push a `v*` tag (for example `v1.0.0`). [`.github/workflows/build.yml`](.github/workflows/build.yml) builds the gem, publishes it to RubyGems.org via [Trusted Publishing](https://guides.rubygems.org/trusted-publishing/), and creates a GitHub Release.
+
+The trusted publisher on RubyGems.org must match:
+
+- Repository owner: `ifduyue`
+- Repository name: `ruby-xxtea`
+- Workflow filename: `build.yml`
+- Environment: `release`
+
 ## License
 
 BSD-2-Clause. See [LICENSE](LICENSE).
+
