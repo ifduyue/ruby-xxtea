@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- Add named padding schemes: `:pkcs7_4_min8` (default, also `true`), `:pkcs7_8`, and `:none` (also `false`).
+- `:pkcs7_4_min8` is 4-byte PKCS#7-like with an 8-byte minimum (pad values 5–8 for short inputs), compatible with Python xxtea.
+- `:pkcs7_8` is standard 8-byte PKCS#7, compatible with Python [xxteang](https://github.com/ifduyue/xxteang).
+
 ## 1.0.0
 
 - Rewrite as a Ruby C extension compatible with Python [xxtea](https://github.com/ifduyue/xxtea) 5.3.3.

@@ -5,7 +5,8 @@
 
 [XXTEA](https://en.wikipedia.org/wiki/XXTEA) implemented as a Ruby C extension, licensed under 2-clause BSD.
 
-Ciphertext is compatible with the [Python xxtea](https://github.com/ifduyue/xxtea) package.
+Default ciphertext is compatible with the [Python xxtea](https://github.com/ifduyue/xxtea) package.
+`padding: :pkcs7_8` is compatible with [Python xxteang](https://github.com/ifduyue/xxteang).
 
 The XXTEA algorithm takes a 128-bit key and operates on an array of 32-bit
 integers (at least 2 integers), but it doesn't define the conversions between
@@ -21,12 +22,11 @@ integers, which is required by the XXTEA algorithm). As a result of these
 measures, you can encrypt not only texts, but also any binary bytes of any
 length.
 
-> **Note:** This implementation uses a **non-standard** 4-byte block PKCS#7
-> padding instead of the conventional 8-byte or 16-byte block. For inputs
-> shorter than 4 bytes, a non-standard hack pads an extra 4 bytes (producing
-> pad values 5–8) to satisfy XXTEA's 2-word minimum. This means the output is
-> **NOT** compatible with other XXTEA implementations. Pass `padding: false`
-> for raw XXTEA (requires data length ≥ 8 and multiple of 4).
+> **Note:** The default (`:pkcs7_4_min8`) is **not** standard 4-byte PKCS#7.
+> For inputs shorter than 4 bytes it pads an extra 4 bytes (pad values 5–8)
+> to satisfy XXTEA's 2-word minimum. Pass `padding: :pkcs7_8` for standard
+> 8-byte PKCS#7 (compatible with Python xxteang), or `padding: false` for
+> raw XXTEA (requires data length ≥ 8 and multiple of 4).
 
 ## Installation
 
@@ -87,9 +87,10 @@ They are stored on the object and used by every `encrypt`, `decrypt`,
 `encrypt_hex`, and `decrypt_hex` call:
 
 ```ruby
-c = XXTEA.new(key)                       # rounds=0, padding=true
-c = XXTEA.new(key, rounds: 64)           # override rounds
-c = XXTEA.new(key, padding: false)       # disable padding
+c = XXTEA.new(key)                         # rounds=0, padding=:pkcs7_4_min8
+c = XXTEA.new(key, rounds: 64)             # override rounds
+c = XXTEA.new(key, padding: false)         # disable padding
+c = XXTEA.new(key, padding: :pkcs7_8)      # 8-byte PKCS#7
 c = XXTEA.new(key, padding: false, rounds: 42)
 ```
 
@@ -103,19 +104,31 @@ s == XXTEA.decrypt([hexenc].pack("H*"), key)  # => true
 
 ## Padding
 
-Padding is enabled by default, using a **non-standard 4-byte block PKCS#7**
-scheme. The pad byte value is `4 - (data.bytesize & 3)` (range 1–4), plus an
-extra 4 bytes when the input is shorter than 4 bytes to meet XXTEA's 2-word
-minimum (producing pad values 5–8).
+`padding` accepts a scheme name, so more paddings can be added later:
 
-Because padding always adds at least one byte, encrypting an 8-byte input
-produces a 12-byte ciphertext. This is incompatible with other XXTEA
-implementations that use a standard block size or skip padding altogether.
-Use `padding: false` for raw, unpadded XXTEA.
+| Value | Meaning |
+| --- | --- |
+| `true` or `:pkcs7_4_min8` (default) | 4-byte PKCS#7-like, padded to at least 8 bytes. Compatible with Python xxtea. Not standard 4-byte PKCS#7 |
+| `:pkcs7_8` | Standard **8-byte** PKCS#7, compatible with Python xxteang |
+| `false` or `:none` | No padding (raw XXTEA) |
+
+`XXTEA::PKCS7_4_MIN8` and `XXTEA::PKCS7_8` are aliases for the symbols.
+
+The default `:pkcs7_4_min8` scheme uses pad byte value `4 - (data.bytesize & 3)`
+(range 1–4), plus an extra 4 bytes when the input is shorter than 4 bytes
+to meet XXTEA's 2-word minimum (producing pad values 5–8). Standard 4-byte
+PKCS#7 never uses pad values 5–8. Because padding always adds at least one
+byte, encrypting an 8-byte input produces a 12-byte ciphertext.
+
+8-byte PKCS#7 uses pad byte value `8 - (data.bytesize & 7)` (range 1–8).
+Encrypting an 8-byte input produces a 16-byte ciphertext.
 
 ```ruby
 XXTEA.decrypt_hex(XXTEA.encrypt_hex("", key), key)   # => ""
 XXTEA.decrypt_hex(XXTEA.encrypt_hex(" ", key), key)  # => " "
+
+XXTEA.encrypt("12345678", key).bytesize                      # => 12  (:pkcs7_4_min8)
+XXTEA.encrypt("12345678", key, padding: :pkcs7_8).bytesize   # => 16  (:pkcs7_8)
 ```
 
 You can disable padding by setting `padding: false`.
@@ -196,7 +209,8 @@ XXTEA.new("k" * 16, rounds: 2**32)
 
 ## Compatibility
 
-- Compatible with [Python xxtea](https://github.com/ifduyue/xxtea) (same padding, endianness, and rounds).
+- Compatible with [Python xxtea](https://github.com/ifduyue/xxtea) (default `:pkcs7_4_min8` padding, endianness, and rounds).
+- `padding: :pkcs7_8` is compatible with [Python xxteang](https://github.com/ifduyue/xxteang).
 - The `XXTEA.encrypt(data, key)` / `XXTEA.decrypt(data, key)` class methods remain compatible with gem 0.0.1 for valid ciphertext. `XXTEA` is now a class rather than a module, and invalid padding raises `ArgumentError` instead of returning stripped bytes.
 
 ## Releasing

@@ -25,6 +25,17 @@ class TestArgPassing < Minitest::Test
     assert_equal @data, XXTEA.decrypt(enc, @key, padding: false)
   end
 
+  def test_encrypt_padding_pkcs7_8_keyword
+    enc = XXTEA.encrypt(@data, @key, padding: :pkcs7_8)
+    assert_equal @data, XXTEA.decrypt(enc, @key, padding: :pkcs7_8)
+  end
+
+  def test_encrypt_padding_pkcs7_4_min8_keyword
+    enc = XXTEA.encrypt(@data, @key, padding: :pkcs7_4_min8)
+    assert_equal enc, XXTEA.encrypt(@data, @key)
+    assert_equal @data, XXTEA.decrypt(enc, @key, padding: :pkcs7_4_min8)
+  end
+
   def test_decrypt_keywords
     assert_equal @data, XXTEA.decrypt(@enc, @key, padding: true)
     enc = XXTEA.encrypt(@data, @key, padding: true, rounds: 32)

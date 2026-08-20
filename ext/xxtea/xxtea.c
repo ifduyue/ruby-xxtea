@@ -22,9 +22,11 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * Ciphertext is compatible with the Python xxtea package
+ * Default ciphertext is compatible with the Python xxtea package
  * (https://github.com/ifduyue/xxtea): little-endian 32-bit words and
- * non-standard 4-byte PKCS#7 padding (pad+4 for inputs shorter than 4 bytes).
+ * :pkcs7_4_min8 padding (4-byte PKCS#7-like, pad+4 for inputs shorter than 4 bytes).
+ * padding: :pkcs7_8 uses 8-byte PKCS#7, compatible with Python xxteang
+ * (https://github.com/ifduyue/xxteang).
  */
 
 #include "ruby.h"
@@ -45,6 +47,9 @@
 
 static ID id_padding;
 static ID id_rounds;
+static ID id_none;
+static ID id_pkcs7_4_min8;
+static ID id_pkcs7_8;
 static VALUE cXXTEA;
 
 typedef struct {
@@ -134,24 +139,45 @@ bytes2longs(const char *in, long inlen, uint32_t *out, int padding)
 #endif
     }
 
-    /*
-     * Assemble the final partial word (0-3 leftover data bytes plus
-     * padding) in a local and store it with a single write, so every
-     * output byte is written exactly once and the caller does not need
-     * to zero the buffer first.  Inputs shorter than 4 bytes are padded
-     * to two words, which also guarantees the minimum XXTEA block size.
-     */
     i = nwords << 2;
-    if (padding || (inlen & 3) != 0) {
+
+    if (padding == 8) {
+        /*
+         * 8-byte PKCS#7 (xxteang): pad = 8 - (len & 7), range 1-8.
+         * Completes the partial word, then adds a whole extra pad word
+         * unless the length is 4 mod 8.
+         */
+        uint32_t w = 0;
+        int r = (int)(inlen & 3);
+        int shift = 0;
+        uint32_t pw;
+        for (; i < inlen; i++, shift += 8) {
+            w |= (uint32_t)s[i] << shift;
+        }
+        pad = 8 - (int)(inlen & 7);
+        pw = (uint32_t)pad * 0x01010101u;
+        w |= pw & (~0u << (8 * r));
+        out[nwords] = w;
+        if ((inlen & 4) == 0) {
+            out[nwords + 1] = pw;
+        }
+        return;
+    }
+
+    /*
+     * :pkcs7_4_min8 (default): 4-byte PKCS#7-like, but inputs shorter
+     * than 4 bytes are padded to two words (pad values 5-8) for XXTEA's
+     * 2-word minimum.  Not standard PKCS#7.
+     */
+    if (padding == 4 || (inlen & 3) != 0) {
         uint32_t w = 0;
         int r = (int)(inlen & 3);
         int shift = 0;
         for (; i < inlen; i++, shift += 8) {
             w |= (uint32_t)s[i] << shift;
         }
-        if (padding) {
+        if (padding == 4) {
             pad = 4 - r;
-            /* Ensure XXTEA always has at least two 32-bit words. */
             if (inlen < 4) {
                 pad += 4;
             }
@@ -190,7 +216,7 @@ longs2bytes(const uint32_t *in, long inlen, char *out, int padding)
 
     outlen = inlen * 4;
 
-    /* 4-byte PKCS#7-style unpadding. */
+    /* PKCS#7-style unpadding (4-byte or 8-byte; pad values 1-8). */
     if (padding) {
         pad = s[outlen - 1];
         outlen -= pad;
@@ -266,13 +292,47 @@ parse_rounds(VALUE obj)
     return NUM2UINT(obj);
 }
 
+/* 0 = none, 4 = :pkcs7_4_min8 (default), 8 = :pkcs7_8. */
+static int
+parse_padding(VALUE obj)
+{
+    ID id;
+
+    if (obj == Qfalse) {
+        return 0;
+    }
+    if (obj == Qtrue) {
+        return 4;
+    }
+    if (RB_TYPE_P(obj, T_STRING)) {
+        obj = rb_str_intern(obj);
+    }
+    if (!SYMBOL_P(obj)) {
+        rb_raise(rb_eTypeError,
+                 "padding must be true, false, :none, :pkcs7_4_min8, or :pkcs7_8");
+    }
+    id = SYM2ID(obj);
+    if (id == id_none) {
+        return 0;
+    }
+    if (id == id_pkcs7_4_min8) {
+        return 4;
+    }
+    if (id == id_pkcs7_8) {
+        return 8;
+    }
+    rb_raise(rb_eArgError,
+             "unknown padding %+"PRIsVALUE" (expected :none, :pkcs7_4_min8, or :pkcs7_8)",
+             obj);
+}
+
 static void
 parse_opts(VALUE opts, int *padding, unsigned int *rounds)
 {
     ID kwids[2];
     VALUE kwvals[2];
 
-    *padding = 1;
+    *padding = 4;
     *rounds = 0;
     if (NIL_P(opts)) {
         return;
@@ -283,7 +343,7 @@ parse_opts(VALUE opts, int *padding, unsigned int *rounds)
     rb_get_kwargs(opts, kwids, 0, 2, kwvals);
 
     if (kwvals[0] != Qundef) {
-        *padding = RTEST(kwvals[0]);
+        *padding = parse_padding(kwvals[0]);
     }
     if (kwvals[1] != Qundef) {
         *rounds = parse_rounds(kwvals[1]);
@@ -315,7 +375,18 @@ encrypt_impl(VALUE data, const char key[16], int padding, unsigned int rounds)
                  "Data length must be a multiple of 4 bytes and must not be less than 8 bytes");
     }
 
-    alen = data_len < 4 ? 2 : (data_len >> 2) + padding;
+    if (padding == 8) {
+        if (data_len > LONG_MAX - 8) {
+            rb_raise(rb_eRangeError, "data too large");
+        }
+        alen = ((data_len & ~7L) + 8) >> 2;
+    }
+    else if (padding == 4) {
+        alen = data_len < 4 ? 2 : (data_len >> 2) + 1;
+    }
+    else {
+        alen = data_len >> 2;
+    }
     if (alen > INT_MAX || alen > LONG_MAX / 4) {
         rb_raise(rb_eRangeError, "data too large");
     }
@@ -501,7 +572,7 @@ xxtea_alloc(VALUE klass)
     xxtea_cipher_t *cipher;
     VALUE obj = TypedData_Make_Struct(klass, xxtea_cipher_t, &xxtea_cipher_type, cipher);
     memset(cipher, 0, sizeof(*cipher));
-    cipher->padding = 1;
+    cipher->padding = 4;
     cipher->rounds = 0;
     return obj;
 }
@@ -556,7 +627,9 @@ xxtea_inspect(VALUE self)
     xxtea_cipher_t *cipher = xxtea_get(self);
     return rb_sprintf("#<%s:%p padding=%s rounds=%u>",
                       rb_obj_classname(self), (void *)self,
-                      cipher->padding ? "true" : "false", cipher->rounds);
+                      cipher->padding == 0 ? "false" :
+                      cipher->padding == 4 ? "pkcs7_4_min8" : "pkcs7_8",
+                      cipher->rounds);
 }
 
 void
@@ -566,6 +639,9 @@ Init_xxtea(void)
 
     id_padding = rb_intern("padding");
     id_rounds = rb_intern("rounds");
+    id_none = rb_intern("none");
+    id_pkcs7_4_min8 = rb_intern("pkcs7_4_min8");
+    id_pkcs7_8 = rb_intern("pkcs7_8");
 
     cXXTEA = rb_define_class("XXTEA", rb_cObject);
     rb_define_alloc_func(cXXTEA, xxtea_alloc);
@@ -581,4 +657,7 @@ Init_xxtea(void)
     rb_define_method(cXXTEA, "encrypt_hex", xxtea_encrypt_hex, 1);
     rb_define_method(cXXTEA, "decrypt_hex", xxtea_decrypt_hex, 1);
     rb_define_method(cXXTEA, "inspect", xxtea_inspect, 0);
+
+    rb_define_const(cXXTEA, "PKCS7_4_MIN8", ID2SYM(id_pkcs7_4_min8));
+    rb_define_const(cXXTEA, "PKCS7_8", ID2SYM(id_pkcs7_8));
 }

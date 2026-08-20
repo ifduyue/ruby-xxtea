@@ -158,7 +158,7 @@ class TestXXTEAType < Minitest::Test
 
   def test_padding_construction
     key = SecureRandom.random_bytes(16)
-    [true, false].each do |padding|
+    [true, false, :pkcs7_4_min8, :pkcs7_8, :none].each do |padding|
       cipher = XXTEA.new(key, padding: padding)
       assert_equal "12345678".b, cipher.decrypt(cipher.encrypt("12345678"))
     end
@@ -167,7 +167,7 @@ class TestXXTEAType < Minitest::Test
   def test_inspect_hides_key
     inspected = @cipher.inspect
     refute_includes inspected, KEY
-    assert_match(/padding=true/, inspected)
+    assert_match(/padding=pkcs7_4_min8/, inspected)
     assert_match(/rounds=0/, inspected)
   end
 
