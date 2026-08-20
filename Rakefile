@@ -1,19 +1,21 @@
-require 'bundler/gem_tasks'
-require 'rake/extensiontask'
-require 'rake/testtask'
-require 'rake/clean'
+# frozen_string_literal: true
 
-Rake::ExtensionTask.new('xxtea') do |ext|
-  ext.lib_dir = 'lib/xxtea'
+begin
+  require "bundler/gem_tasks"
+rescue LoadError
+end
+require "rake/extensiontask"
+require "rake/testtask"
+
+Rake::ExtensionTask.new("xxtea") do |ext|
+  ext.lib_dir = "lib/xxtea"
 end
 
-Rake::TestTask.new do |t|
-  t.libs << 'test'
-  t.pattern = 'test/*_test.rb'
-  t.verbose = true
+Rake::TestTask.new(:test) do |t|
+  t.libs << "test"
+  t.libs << "lib"
+  t.test_files = FileList["test/**/test_*.rb"]
+  t.warning = true
 end
 
-desc "Run tests"
-task :default => :test
-
-Rake::Task[:test].prerequisites << :compile
+task default: %i[compile test]

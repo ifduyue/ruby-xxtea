@@ -1,0 +1,8 @@
+* text=auto eol=lf
+*.c text eol=lf
+*.h text eol=lf
+*.rb text eol=lf
+*.so binary
+*.bundle binary
+*.dll binary
+*.gem binary

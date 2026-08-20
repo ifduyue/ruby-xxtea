@@ -1,21 +1,38 @@
-# -*- encoding: utf-8 -*-
+# frozen_string_literal: true
 
-lib = File.expand_path('../lib', __FILE__)
-$LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
+require_relative "lib/xxtea/version"
 
-require 'xxtea/version'
-Gem::Specification.new do |gem|
-  gem.name = "xxtea"
-  gem.version = XXTEA::VERSION
-  gem.authors = ["Yue Du"]
-  gem.email = ["ifduyue@gmail.com"]
-  gem.description = %q{Ruby xxtea module}
-  gem.summary = %q{Ruby xxtea module}
-  gem.homepage = "http://github.com/ifduyue/xxtea"
-  gem.license = 'BSD'
-  gem.files = `git ls-files`.split($/)
-  gem.executables = gem.files.grep(%r{^bin/}).map{ |f| File.basename(f) }
-  gem.test_files = gem.files.grep(%r{^(test|spec|features)/})
-  gem.require_paths = ["lib"]
-  gem.extensions = ["ext/xxtea/extconf.rb"]
+Gem::Specification.new do |spec|
+  spec.name = "xxtea"
+  spec.version = XXTEA::VERSION
+  spec.authors = ["Yue Du"]
+  spec.email = ["ifduyue@gmail.com"]
+
+  spec.summary = "XXTEA block cipher as a Ruby C extension"
+  spec.description = <<~DESC
+    XXTEA implemented as a Ruby C extension. Ciphertext is compatible with the
+    Python xxtea package: little-endian 32-bit words and non-standard 4-byte
+    PKCS#7 padding.
+  DESC
+  spec.homepage = "https://github.com/ifduyue/ruby-xxtea"
+  spec.license = "BSD-2-Clause"
+  spec.required_ruby_version = ">= 3.1.0"
+
+  spec.metadata["homepage_uri"] = spec.homepage
+  spec.metadata["source_code_uri"] = spec.homepage
+  spec.metadata["changelog_uri"] = "#{spec.homepage}/blob/master/CHANGELOG.md"
+  spec.metadata["bug_tracker_uri"] = "#{spec.homepage}/issues"
+  spec.metadata["rubygems_mfa_required"] = "true"
+
+  spec.files = Dir.chdir(__dir__) do
+    Dir[
+      "lib/**/*.rb",
+      "ext/**/*.{c,h,rb}",
+      "LICENSE",
+      "README.md",
+      "CHANGELOG.md",
+    ]
+  end
+  spec.require_paths = ["lib"]
+  spec.extensions = ["ext/xxtea/extconf.rb"]
 end

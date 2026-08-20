@@ -1,3 +1,5 @@
-module XXTEA
-  VERSION = "0.0.1"
+# frozen_string_literal: true
+
+class XXTEA
+  VERSION = "1.0.0"
 end

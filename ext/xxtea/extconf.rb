@@ -1,5 +1,5 @@
-require 'mkmf'
+# frozen_string_literal: true
 
-$CFLAGS += ' -g -O3 -Wall '
+require "mkmf"
 
-create_makefile('xxtea/xxtea')
+create_makefile("xxtea/xxtea")
