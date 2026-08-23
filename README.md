@@ -91,6 +91,7 @@ c = XXTEA.new(key)                         # rounds=0, padding=:pkcs7_4_min8
 c = XXTEA.new(key, rounds: 64)             # override rounds
 c = XXTEA.new(key, padding: false)         # disable padding
 c = XXTEA.new(key, padding: :pkcs7_8)      # 8-byte PKCS#7
+c = XXTEA.new(key, padding: :length_word_suffix)  # length word + zero padding
 c = XXTEA.new(key, padding: false, rounds: 42)
 ```
 
@@ -110,9 +111,12 @@ s == XXTEA.decrypt([hexenc].pack("H*"), key)  # => true
 | --- | --- |
 | `true` or `:pkcs7_4_min8` (default) | 4-byte PKCS#7-like, padded to at least 8 bytes. Compatible with Python xxtea. Not standard 4-byte PKCS#7 |
 | `:pkcs7_8` | Standard **8-byte** PKCS#7, compatible with Python xxteang |
+| `:length_word_suffix` | Zero-pad to a 4-byte boundary, then append one little-endian `uint32` with the original length. Cocos Creator JSC files using this layout can be decrypted. Compatible with Python xxtea 6.2.0 |
+| `:length_word_prefix` | Prepend one little-endian `uint32` with the original length, then zero-pad the data to a 4-byte boundary. Compatible with Python xxtea 6.2.0 |
 | `false` or `:none` | No padding (raw XXTEA) |
 
-`XXTEA::PKCS7_4_MIN8` and `XXTEA::PKCS7_8` are aliases for the symbols.
+`XXTEA::PKCS7_4_MIN8`, `XXTEA::PKCS7_8`, `XXTEA::LENGTH_WORD_PREFIX`, and
+`XXTEA::LENGTH_WORD_SUFFIX` are aliases for the symbols.
 
 The default `:pkcs7_4_min8` scheme uses pad byte value `4 - (data.bytesize & 3)`
 (range 1–4), plus an extra 4 bytes when the input is shorter than 4 bytes
@@ -123,12 +127,21 @@ byte, encrypting an 8-byte input produces a 12-byte ciphertext.
 8-byte PKCS#7 uses pad byte value `8 - (data.bytesize & 7)` (range 1–8).
 Encrypting an 8-byte input produces a 16-byte ciphertext.
 
+The length-word schemes store the original byte length in a little-endian
+`uint32` word, so the plaintext length must fit in 32 bits (`RangeError`
+otherwise). The data is zero-padded to a 4-byte boundary around that word:
+the length word is the last word for `:length_word_suffix` and the first
+word for `:length_word_prefix`. Because of XXTEA's 2-word minimum, empty
+input produces an 8-byte ciphertext in either scheme.
+
 ```ruby
 XXTEA.decrypt_hex(XXTEA.encrypt_hex("", key), key)   # => ""
 XXTEA.decrypt_hex(XXTEA.encrypt_hex(" ", key), key)  # => " "
 
-XXTEA.encrypt("12345678", key).bytesize                      # => 12  (:pkcs7_4_min8)
-XXTEA.encrypt("12345678", key, padding: :pkcs7_8).bytesize   # => 16  (:pkcs7_8)
+XXTEA.encrypt("12345678", key).bytesize                                 # => 12  (:pkcs7_4_min8)
+XXTEA.encrypt("12345678", key, padding: :pkcs7_8).bytesize              # => 16  (:pkcs7_8)
+XXTEA.encrypt("12345678", key, padding: :length_word_suffix).bytesize   # => 12
+XXTEA.encrypt("12345678", key, padding: :length_word_prefix).bytesize   # => 12
 ```
 
 You can disable padding by setting `padding: false`.
@@ -209,7 +222,7 @@ XXTEA.new("k" * 16, rounds: 2**32)
 
 ## Compatibility
 
-- Compatible with [Python xxtea](https://github.com/ifduyue/xxtea) (default `:pkcs7_4_min8` padding, endianness, and rounds).
+- Compatible with [Python xxtea](https://github.com/ifduyue/xxtea) 6.2.0: all five padding schemes (`:pkcs7_4_min8`, `:pkcs7_8`, `:length_word_prefix`, `:length_word_suffix`, `:none`), endianness, and rounds.
 - `padding: :pkcs7_8` is compatible with [Python xxteang](https://github.com/ifduyue/xxteang).
 - The `XXTEA.encrypt(data, key)` / `XXTEA.decrypt(data, key)` class methods remain compatible with gem 0.0.1 for valid ciphertext. `XXTEA` is now a class rather than a module, and invalid padding raises `ArgumentError` instead of returning stripped bytes.
 

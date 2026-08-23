@@ -26,7 +26,9 @@
  * (https://github.com/ifduyue/xxtea): little-endian 32-bit words and
  * :pkcs7_4_min8 padding (4-byte PKCS#7-like, pad+4 for inputs shorter than 4 bytes).
  * padding: :pkcs7_8 uses 8-byte PKCS#7, compatible with Python xxteang
- * (https://github.com/ifduyue/xxteang).
+ * (https://github.com/ifduyue/xxteang); :length_word_prefix and
+ * :length_word_suffix prepend/append a little-endian uint32 length word
+ * with zero padding, matching Python xxtea 6.2.0.
  */
 
 #include "ruby.h"
@@ -50,6 +52,8 @@ static ID id_rounds;
 static ID id_none;
 static ID id_pkcs7_4_min8;
 static ID id_pkcs7_8;
+static ID id_length_word_prefix;
+static ID id_length_word_suffix;
 static VALUE cXXTEA;
 
 typedef struct {
@@ -127,19 +131,46 @@ bytes2longs(const char *in, long inlen, uint32_t *out, int padding)
     long i, nwords;
     int pad;
     const unsigned char *s = (const unsigned char *)in;
+    uint32_t *dst = out;
+
+    if (padding == 2) {
+        /* uint32 store, not memcpy(&inlen): 64-bit would copy the high half. */
+        out[0] = (uint32_t)inlen;
+        dst = out + 1;
+    }
 
     nwords = inlen >> 2;
     for (i = 0; i < nwords; i++) {
 #if XXTEA_LITTLE_ENDIAN
-        memcpy(&out[i], s + 4 * i, 4);
+        memcpy(&dst[i], s + 4 * i, 4);
 #else
         const unsigned char *p = s + 4 * i;
-        out[i] = (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+        dst[i] = (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
                  ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 #endif
     }
 
     i = nwords << 2;
+
+    if (padding == 1 || padding == 2) {
+        /* XXTEA needs two words, so empty input gets an extra zero word. */
+        uint32_t w = 0;
+        int shift = 0;
+        for (; i < inlen; i++, shift += 8) {
+            w |= (uint32_t)s[i] << shift;
+        }
+        if ((inlen & 3) != 0) {
+            dst[nwords] = w;
+            nwords++;
+        }
+        if (nwords < 1) {
+            dst[nwords++] = 0;
+        }
+        if (padding == 1) {
+            dst[nwords] = (uint32_t)inlen;
+        }
+        return;
+    }
 
     if (padding == 8) {
         /*
@@ -216,8 +247,41 @@ longs2bytes(const uint32_t *in, long inlen, char *out, int padding)
 
     outlen = inlen * 4;
 
+    if (padding == 1 || padding == 2) {
+        int prefix = padding == 2;
+        long n = outlen - 4;
+        long leftover, pad_from, pad_to;
+        uint32_t m32;
+        if (prefix) {
+            m32 = (uint32_t)s[0] | ((uint32_t)s[1] << 8) |
+                  ((uint32_t)s[2] << 16) | ((uint32_t)s[3] << 24);
+        }
+        else {
+            m32 = (uint32_t)s[n] | ((uint32_t)s[n + 1] << 8) |
+                  ((uint32_t)s[n + 2] << 16) | ((uint32_t)s[n + 3] << 24);
+        }
+        if ((size_t)m32 > (size_t)n) {
+            return -1;
+        }
+        leftover = n - (long)m32;
+        pad_from = prefix ? 4 + (long)m32 : (long)m32;
+        pad_to = prefix ? outlen : n;
+        /* leftover 4 is the empty 2-word case; otherwise 0-3 zero-pad bytes. */
+        if (leftover > 3 && !(m32 == 0 && leftover == 4)) {
+            return -1;
+        }
+        for (i = pad_from; i < pad_to; i++) {
+            if (s[i] != 0) {
+                return -1;
+            }
+        }
+        if (prefix && m32 != 0) {
+            memmove(s, s + 4, (size_t)m32);
+        }
+        outlen = (long)m32;
+    }
     /* PKCS#7-style unpadding (4-byte or 8-byte; pad values 1-8). */
-    if (padding) {
+    else if (padding) {
         pad = s[outlen - 1];
         outlen -= pad;
 
@@ -292,7 +356,8 @@ parse_rounds(VALUE obj)
     return NUM2UINT(obj);
 }
 
-/* 0 = none, 4 = :pkcs7_4_min8 (default), 8 = :pkcs7_8. */
+/* 0 = none, 1 = :length_word_suffix, 2 = :length_word_prefix,
+ * 4 = :pkcs7_4_min8 (default), 8 = :pkcs7_8. */
 static int
 parse_padding(VALUE obj)
 {
@@ -309,11 +374,18 @@ parse_padding(VALUE obj)
     }
     if (!SYMBOL_P(obj)) {
         rb_raise(rb_eTypeError,
-                 "padding must be true, false, :none, :pkcs7_4_min8, or :pkcs7_8");
+                 "padding must be true, false, :none, :pkcs7_4_min8, "
+                 ":pkcs7_8, :length_word_prefix, or :length_word_suffix");
     }
     id = SYM2ID(obj);
     if (id == id_none) {
         return 0;
+    }
+    if (id == id_length_word_suffix) {
+        return 1;
+    }
+    if (id == id_length_word_prefix) {
+        return 2;
     }
     if (id == id_pkcs7_4_min8) {
         return 4;
@@ -322,7 +394,8 @@ parse_padding(VALUE obj)
         return 8;
     }
     rb_raise(rb_eArgError,
-             "unknown padding %+"PRIsVALUE" (expected :none, :pkcs7_4_min8, or :pkcs7_8)",
+             "unknown padding %+"PRIsVALUE" (expected :none, :pkcs7_4_min8, "
+             ":pkcs7_8, :length_word_prefix, or :length_word_suffix)",
              obj);
 }
 
@@ -383,6 +456,21 @@ encrypt_impl(VALUE data, const char key[16], int padding, unsigned int rounds)
     }
     else if (padding == 4) {
         alen = data_len < 4 ? 2 : (data_len >> 2) + 1;
+    }
+    else if (padding == 1 || padding == 2) {
+        /* The length word is a uint32, so the plaintext length must fit. */
+#if LONG_MAX > 2147483647L
+        if (data_len > 0xFFFFFFFFL) {
+            rb_raise(rb_eRangeError, "data too large");
+        }
+#endif
+        if (data_len > LONG_MAX - 4) {
+            rb_raise(rb_eRangeError, "data too large");
+        }
+        alen = (data_len >> 2) + ((data_len & 3) != 0 ? 1 : 0) + 1;
+        if (alen < 2) {
+            alen = 2;
+        }
     }
     else {
         alen = data_len >> 2;
@@ -628,6 +716,8 @@ xxtea_inspect(VALUE self)
     return rb_sprintf("#<%s:%p padding=%s rounds=%u>",
                       rb_obj_classname(self), (void *)self,
                       cipher->padding == 0 ? "false" :
+                      cipher->padding == 1 ? "length_word_suffix" :
+                      cipher->padding == 2 ? "length_word_prefix" :
                       cipher->padding == 4 ? "pkcs7_4_min8" : "pkcs7_8",
                       cipher->rounds);
 }
@@ -642,6 +732,8 @@ Init_xxtea(void)
     id_none = rb_intern("none");
     id_pkcs7_4_min8 = rb_intern("pkcs7_4_min8");
     id_pkcs7_8 = rb_intern("pkcs7_8");
+    id_length_word_prefix = rb_intern("length_word_prefix");
+    id_length_word_suffix = rb_intern("length_word_suffix");
 
     cXXTEA = rb_define_class("XXTEA", rb_cObject);
     rb_define_alloc_func(cXXTEA, xxtea_alloc);
@@ -660,4 +752,6 @@ Init_xxtea(void)
 
     rb_define_const(cXXTEA, "PKCS7_4_MIN8", ID2SYM(id_pkcs7_4_min8));
     rb_define_const(cXXTEA, "PKCS7_8", ID2SYM(id_pkcs7_8));
+    rb_define_const(cXXTEA, "LENGTH_WORD_PREFIX", ID2SYM(id_length_word_prefix));
+    rb_define_const(cXXTEA, "LENGTH_WORD_SUFFIX", ID2SYM(id_length_word_suffix));
 }

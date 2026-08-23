@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0
+
+- Add the `:length_word_suffix` and `:length_word_prefix` padding schemes, matching all five padding modes of [Python xxtea](https://github.com/ifduyue/xxtea) 6.2.0.
+  - `:length_word_suffix`: zero-pads to a 4-byte boundary, then appends one little-endian `uint32` with the original length (Cocos Creator JSC files).
+  - `:length_word_prefix`: prepends one little-endian `uint32` with the original length, then zero-pads the data to a 4-byte boundary.
+  - Both support empty input (padded to XXTEA's 2-word minimum) and raise `ArgumentError` on decrypt when the zero padding or length word is inconsistent.
+- Add `XXTEA::LENGTH_WORD_SUFFIX` and `XXTEA::LENGTH_WORD_PREFIX` constant aliases.
+
 ## 1.1.0
 
 - Add named padding schemes: `:pkcs7_4_min8` (default, also `true`), `:pkcs7_8`, and `:none` (also `false`).
